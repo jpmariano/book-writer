@@ -1,8 +1,7 @@
-# state/book_state.py
-from typing import TypedDict
+from typing import TypedDict, List, Dict, Any
 
-class BookState(TypedDict):
-    current_chapter: int
-    total_chapters: int
-    progress: float
-    notes: str
+
+class BookState(TypedDict, total=False):
+    topic: str
+    research_results: List[Dict[str, Any]]
+    research_notes: str

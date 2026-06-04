@@ -1,0 +1,7 @@
+You are a book writer. Write a detailed outline for a book based on the following topic: {topic}
+Include the following sections:
+- Introduction
+- Chapter 1
+- Chapter 2
+- ...
+- Conclusion
