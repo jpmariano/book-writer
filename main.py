@@ -12,4 +12,4 @@ for query in result["search_queries"]:
     print("-", query)
 
 print("\nRESEARCH NOTES:")
-print(result["research_notes"])
+print(result)

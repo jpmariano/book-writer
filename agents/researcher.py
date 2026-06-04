@@ -1,11 +1,28 @@
-from langchain_ollama import ChatOllama
+import uuid
+from datetime import datetime, timezone
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct
+
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+
 from agents.websearch import web_search
 from state.book_state import BookState
-from prompts.book_outline_prompt import book_outline_prompt
+
+
+COLLECTION_NAME = "book_research"
 
 llm = ChatOllama(
     model="qwen3:8b",
     temperature=0.3,
+)
+
+embeddings = OllamaEmbeddings(
+    model="nomic-embed-text"
+)
+
+qdrant = QdrantClient(
+    url="http://localhost:6333"
 )
 
 
@@ -34,72 +51,146 @@ No numbering.
     return queries[:6]
 
 
-def summarize_research(topic: str, results: list[dict]) -> str:
-    formatted_results = ""
+def chunk_text(text: str, chunk_size: int = 800, overlap: int = 120) -> list[str]:
+    chunks = []
+    start = 0
 
-    for item in results:
-        formatted_results += f"""
-Title: {item.get("title")}
-URL: {item.get("href")}
-Snippet: {item.get("body")}
-"""
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end].strip()
 
-    prompt = f"""
-You are a research assistant helping write a book.
+        if chunk:
+            chunks.append(chunk)
 
-Book topic:
-{topic}
+        start += chunk_size - overlap
 
-Search results:
-{formatted_results}
-
-Create useful research notes for a writer.
-
-Include:
-- key ideas
-- important facts
-- examples
-- trends
-- possible chapter angles
-- useful sources
-
-Keep it organized and practical.
-"""
-
-    response = llm.invoke(prompt)
-    return response.content
+    return chunks
 
 
-def researcher(state):
-    print("Researcher started")
-    print(state)
-    topic = state["topic"]
+def ensure_collection(vector_size: int):
+    existing = [c.name for c in qdrant.get_collections().collections]
 
-    print("Generating queries...")
-    search_queries = generate_search_queries(topic)
+    if COLLECTION_NAME not in existing:
+        qdrant.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(
+                size=vector_size,
+                distance=Distance.COSINE,
+            ),
+        )
 
-    print(search_queries)
 
-    all_results = []
+def build_research_documents(
+    topic: str,
+    book_id: str,
+    research_run_id: str,
+    search_queries: list[str],
+) -> list[dict]:
+    documents = []
 
     for query in search_queries:
         print(f"Searching: {query}")
 
-        results = web_search(query)
+        results = web_search(query, max_results=5)
 
-        all_results.extend(results)
+        for result in results:
+            title = result.get("title", "")
+            url = result.get("href", "")
+            snippet = result.get("body", "")
 
-    print("Summarizing...")
+            text = f"""
+Title: {title}
+URL: {url}
+Search Query: {query}
 
-    research_notes = summarize_research(
-        topic,
-        all_results
+{snippet}
+""".strip()
+
+            chunks = chunk_text(text)
+
+            for index, chunk in enumerate(chunks):
+                documents.append({
+                    "text": chunk,
+                    "metadata": {
+                        "book_id": book_id,
+                        "research_run_id": research_run_id,
+                        "topic": topic,
+                        "query": query,
+                        "source_title": title,
+                        "source_url": url,
+                        "chunk_index": index,
+                        "agent": "researcher",
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                })
+
+    return documents
+
+
+def save_documents_to_qdrant(documents: list[dict]) -> list[str]:
+    if not documents:
+        return []
+
+    first_vector = embeddings.embed_query(documents[0]["text"])
+    ensure_collection(vector_size=len(first_vector))
+
+    points = []
+    stored_ids = []
+
+    for document in documents:
+        point_id = str(uuid.uuid4())
+        vector = embeddings.embed_query(document["text"])
+
+        points.append(
+            PointStruct(
+                id=point_id,
+                vector=vector,
+                payload={
+                    "text": document["text"],
+                    **document["metadata"],
+                },
+            )
+        )
+
+        stored_ids.append(point_id)
+
+    qdrant.upsert(
+        collection_name=COLLECTION_NAME,
+        points=points,
     )
 
-    print("Done")
+    return stored_ids
+
+
+def researcher(state: BookState):
+    print("Researcher started")
+
+    topic = state["topic"]
+
+    book_id = state.get("book_id", str(uuid.uuid4()))
+    research_run_id = state.get("research_run_id", str(uuid.uuid4()))
+
+    print("Generating search queries...")
+    search_queries = generate_search_queries(topic)
+
+    print("Building research documents...")
+    documents = build_research_documents(
+        topic=topic,
+        book_id=book_id,
+        research_run_id=research_run_id,
+        search_queries=search_queries,
+    )
+
+    print("Saving research chunks to Qdrant...")
+    stored_ids = save_documents_to_qdrant(documents)
+
+    print("Researcher done")
 
     return {
+        "book_id": book_id,
+        "research_run_id": research_run_id,
+        "vector_collection": COLLECTION_NAME,
         "search_queries": search_queries,
-        "research_results": all_results,
-        "research_notes": research_notes,
+        "research_chunk_ids": stored_ids,
+        "research_item_count": len(documents),
     }
