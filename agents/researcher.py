@@ -1,8 +1,7 @@
 from langchain_ollama import ChatOllama
-
 from agents.websearch import web_search
 from state.book_state import BookState
-
+from prompts.book_outline_prompt import book_outline_prompt
 
 llm = ChatOllama(
     model="qwen3:8b",
@@ -73,7 +72,7 @@ Keep it organized and practical.
 
 def researcher(state):
     print("Researcher started")
-
+    print(state)
     topic = state["topic"]
 
     print("Generating queries...")
