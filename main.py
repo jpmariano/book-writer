@@ -1,15 +1,13 @@
-from dotenv import load_dotenv
 from graph import app
 
-load_dotenv()
-
 result = app.invoke({
-    "topic": "Building Modern Agentic Applications"
+    "research_batch_size": 5,
+    "completed_research_task_ids": [],
 })
 
-print("\nSEARCH QUERIES:")
-for query in result["search_queries"]:
-    print("-", query)
+print("\nBOOK:")
+print(result["book_title"])
 
-print("\nRESEARCH NOTES:")
-print(result)
+print("\nCURRENT RESEARCH BATCH:")
+for task in result["current_research_batch"]:
+    print("-", task["chapter_title"], "→", task["topic_title"])

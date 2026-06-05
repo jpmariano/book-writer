@@ -241,24 +241,35 @@ def save_documents_to_qdrant(documents: list[dict]) -> list[str]:
 def researcher(state: BookState):
     print("Researcher started")
 
-    topic = state["topic"]
+    research_batch = state["current_research_batch"]
 
     book_id = state.get("book_id", str(uuid.uuid4()))
     research_run_id = state.get("research_run_id", str(uuid.uuid4()))
 
-    print("Generating search queries...")
-    search_queries = generate_search_queries(topic)
+    all_search_queries = []
+    all_documents = []
+    completed_task_ids = state.get("completed_research_task_ids", [])
 
-    print("Building research documents...")
-    documents = build_research_documents(
-        topic=topic,
-        book_id=book_id,
-        research_run_id=research_run_id,
-        search_queries=search_queries,
-    )
+    for task in research_batch:
+        topic = task["topic_title"]
+
+        print(f"Researching topic: {topic}")
+
+        search_queries = generate_search_queries(topic)
+        all_search_queries.extend(search_queries)
+
+        documents = build_research_documents(
+            topic=topic,
+            book_id=book_id,
+            research_run_id=research_run_id,
+            search_queries=search_queries,
+        )
+
+        all_documents.extend(documents)
+        completed_task_ids.append(task["task_id"])
 
     print("Saving research chunks to Qdrant...")
-    stored_ids = save_documents_to_qdrant(documents)
+    stored_ids = save_documents_to_qdrant(all_documents)
 
     print("Researcher done")
 
@@ -266,7 +277,8 @@ def researcher(state: BookState):
         "book_id": book_id,
         "research_run_id": research_run_id,
         "vector_collection": COLLECTION_NAME,
-        "search_queries": search_queries,
+        "search_queries": all_search_queries,
         "research_chunk_ids": stored_ids,
-        "research_item_count": len(documents),
+        "research_item_count": len(all_documents),
+        "completed_research_task_ids": completed_task_ids,
     }

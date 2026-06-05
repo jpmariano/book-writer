@@ -38,10 +38,27 @@ CREATE TABLE IF NOT EXISTS research_sources (
     search_snippet TEXT,
     full_text TEXT,
     content_length INTEGER,
-    created_at TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    task_id TEXT,
+    book_title Text, 
+    audience TEXT[],
+    part_title TEXT,
+    chapter_title TEXT,
+    topic_title TEXT,
+    task_metadata JSONB,
+    global_topic_index INTEGER
 );
 ```
-
+```bash
+\dt #Lists all tables in the current (public) schema.
+\dt #Lists all tables across all schemas, including system tables.
+\dt+ #Lists tables with extra details like size and descriptions.
+\d #Lists all tables, views, and sequences combined.
+\d #table_name – Inspects columns and data types for a specific
+DROP TABLE research_sources;
+TRUNCATE TABLE research_sources;
+curl -X DELETE http://localhost:6333/collections/book_research
+```
 You can run it with:
 ```bash
 docker exec -it book-writer-postgres psql -U book_writer -d book_writer
@@ -60,7 +77,6 @@ LIMIT 5;
 SELECT COUNT(*) FROM research_sources;
 SELECT
     id,
-    source_title,
     full_text
 FROM research_sources
 LIMIT 1;
@@ -68,4 +84,6 @@ LIMIT 1;
 TRUNCATE TABLE research_sources;
 
 \q
+
+pip install pyyaml
 ```
