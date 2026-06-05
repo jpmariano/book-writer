@@ -48,6 +48,19 @@ CREATE TABLE IF NOT EXISTS research_sources (
     task_metadata JSONB,
     global_topic_index INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS drafts (
+    id UUID PRIMARY KEY,
+    book_id UUID NOT NULL,
+    research_run_id UUID NOT NULL,
+    task_id TEXT,
+    chapter_title TEXT,
+    topic_title TEXT,
+    general_explanation TEXT,
+    technical_explanation TEXT,
+    used_source_ids TEXT[],
+    created_at TIMESTAMPTZ NOT NULL
+);
 ```
 ```bash
 \dt #Lists all tables in the current (public) schema.
@@ -57,7 +70,12 @@ CREATE TABLE IF NOT EXISTS research_sources (
 \d #table_name – Inspects columns and data types for a specific
 DROP TABLE research_sources;
 TRUNCATE TABLE research_sources;
+
+DROP TABLE drafts;
+TRUNCATE TABLE drafts;
 curl -X DELETE http://localhost:6333/collections/book_research
+
+SELECT topic_title, LEFT(general_explanation, 300) FROM drafts LIMIT 5;
 ```
 You can run it with:
 ```bash
@@ -77,13 +95,36 @@ LIMIT 5;
 SELECT COUNT(*) FROM research_sources;
 SELECT
     id,
-    full_text
-FROM research_sources
-LIMIT 1;
+    source_title
+FROM research_sources;
 
 TRUNCATE TABLE research_sources;
 
 \q
 
 pip install pyyaml
+
+book.yml
+  ↓
+Research Task Generator
+  ↓
+Batch 5 topics at a time
+  ↓
+Researcher Agent
+  ↓
+PostgreSQL full sources
+  ↓
+Qdrant chunks
+  ↓
+Writer Agent
+    ↓
+Writer Receives chapter topic / chapter goal
+    ↓
+Writer Queries Qdrant for relevant chunks
+    ↓
+Writer Uses source_id to fetch full source from PostgreSQL if needed
+    ↓
+Writes original explanation
+    ↓
+Stores draft
 ```

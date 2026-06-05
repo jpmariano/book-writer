@@ -15,3 +15,5 @@ class BookState(TypedDict, total=False):
     search_queries: List[str]
     research_chunk_ids: List[str]
     research_item_count: int
+    draft_ids: List[str]
+    draft_count: int
