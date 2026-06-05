@@ -17,3 +17,55 @@ curl http://localhost:11434/api/generate -d '{"model": "llama3", "prompt": "Why 
 
 # Request to Model 2
 curl http://localhost:11434/api/generate -d '{"model": "mistral", "prompt": "Write a poem about rain."}'
+
+
+docker run -p 6333:6333 -p 6334:6334 --name book-writer qdrant/qdrant
+
+docker run --name <nameyourcontainer> <reponame>:<tag>
+pip install qdrant-client langchain-ollama
+ollama pull nomic-embed-text
+
+pip install "psycopg[binary]"
+```sql
+CREATE TABLE IF NOT EXISTS research_sources (
+    id UUID PRIMARY KEY,
+    book_id UUID NOT NULL,
+    research_run_id UUID NOT NULL,
+    topic TEXT NOT NULL,
+    query TEXT NOT NULL,
+    source_title TEXT,
+    source_url TEXT,
+    search_snippet TEXT,
+    full_text TEXT,
+    content_length INTEGER,
+    created_at TIMESTAMPTZ NOT NULL
+);
+```
+
+You can run it with:
+```bash
+docker exec -it book-writer-postgres psql -U book_writer -d book_writer
+
+\dt
+\d research_sources
+SELECT COUNT(*) FROM research_sources;
+SELECT
+    id,
+    source_title,
+    source_url,
+    full_text
+FROM research_sources
+LIMIT 5;
+
+SELECT COUNT(*) FROM research_sources;
+SELECT
+    id,
+    source_title,
+    full_text
+FROM research_sources
+LIMIT 1;
+
+TRUNCATE TABLE research_sources;
+
+\q
+```

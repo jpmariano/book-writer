@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime, timezone
 
+import psycopg
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from agents.websearch import web_search
@@ -11,6 +11,8 @@ from state.book_state import BookState
 
 
 COLLECTION_NAME = "book_research"
+
+POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
 
 llm = ChatOllama(
     model="qwen3:8b",
@@ -43,7 +45,7 @@ No numbering.
     response = llm.invoke(prompt)
 
     queries = [
-        line.strip("-• 1234567890.").strip()
+        line.strip("-• 1234567890.").strip().strip('"')
         for line in response.content.splitlines()
         if line.strip()
     ]
@@ -80,6 +82,59 @@ def ensure_collection(vector_size: int):
         )
 
 
+def save_source_to_postgres(
+    book_id: str,
+    research_run_id: str,
+    topic: str,
+    query: str,
+    title: str,
+    url: str,
+    snippet: str,
+    full_text: str,
+) -> str:
+    source_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc)
+
+    with psycopg.connect(POSTGRES_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO research_sources (
+                    id,
+                    book_id,
+                    research_run_id,
+                    topic,
+                    query,
+                    source_title,
+                    source_url,
+                    search_snippet,
+                    full_text,
+                    content_length,
+                    created_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    source_id,
+                    book_id,
+                    research_run_id,
+                    topic,
+                    query,
+                    title,
+                    url,
+                    snippet,
+                    full_text,
+                    len(full_text),
+                    created_at,
+                ),
+            )
+
+    return source_id
+
+
 def build_research_documents(
     topic: str,
     book_id: str,
@@ -87,6 +142,7 @@ def build_research_documents(
     search_queries: list[str],
 ) -> list[dict]:
     documents = []
+    seen_urls = set()
 
     for query in search_queries:
         print(f"Searching: {query}")
@@ -98,7 +154,14 @@ def build_research_documents(
             url = result.get("href", "")
             snippet = result.get("body", "")
 
-            text = f"""
+            if not url or url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+
+            # For now, this is still the DDGS snippet.
+            # Later, replace this with full page extraction.
+            full_text = f"""
 Title: {title}
 URL: {url}
 Search Query: {query}
@@ -106,12 +169,24 @@ Search Query: {query}
 {snippet}
 """.strip()
 
-            chunks = chunk_text(text)
+            source_id = save_source_to_postgres(
+                book_id=book_id,
+                research_run_id=research_run_id,
+                topic=topic,
+                query=query,
+                title=title,
+                url=url,
+                snippet=snippet,
+                full_text=full_text,
+            )
+
+            chunks = chunk_text(full_text)
 
             for index, chunk in enumerate(chunks):
                 documents.append({
                     "text": chunk,
                     "metadata": {
+                        "source_id": source_id,
                         "book_id": book_id,
                         "research_run_id": research_run_id,
                         "topic": topic,
@@ -119,6 +194,7 @@ Search Query: {query}
                         "source_title": title,
                         "source_url": url,
                         "chunk_index": index,
+                        "chunk_count": len(chunks),
                         "agent": "researcher",
                         "created_at": datetime.now(timezone.utc).isoformat(),
                     }
