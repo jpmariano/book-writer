@@ -172,7 +172,7 @@ def save_draft_to_postgres(
 
 def writer(state: BookState):
     print("Writer started")
-
+    completed_task_ids = state.get("completed_research_task_ids", []).copy()
     book_id = state["book_id"]
     research_run_id = state["research_run_id"]
     research_batch = state["current_research_batch"]
@@ -219,10 +219,12 @@ def writer(state: BookState):
         )
 
         draft_ids.append(draft_id)
-
+        completed_task_ids.append(task_id)
+        
     print("Writer done")
-
+    
     return {
         "draft_ids": draft_ids,
         "draft_count": len(draft_ids),
+        "completed_research_task_ids": completed_task_ids,
     }

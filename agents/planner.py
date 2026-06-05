@@ -36,7 +36,7 @@ def flatten_book_topics(book_guide: dict[str, Any]) -> list[dict[str, Any]]:
                 topic_counter += 1
 
                 tasks.append({
-                    "task_id": str(uuid.uuid4()),
+                    "task_id": make_task_id(part_index, chapter_index, topic_index),
                     "book_title": book_title,
                     "audience": audience,
                     "part_index": part_index,
@@ -89,4 +89,8 @@ def planner(state: BookState):
         "audience": book_guide["book"].get("audience", []),
         "all_research_tasks": all_research_tasks,
         "current_research_batch": research_batch,
+        "has_more_research_tasks": len(research_batch) > 0,
     }
+
+def make_task_id(part_index, chapter_index, topic_index):
+    return f"part-{part_index}-chapter-{chapter_index}-topic-{topic_index}"

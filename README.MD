@@ -59,7 +59,12 @@ CREATE TABLE IF NOT EXISTS drafts (
     general_explanation TEXT,
     technical_explanation TEXT,
     used_source_ids TEXT[],
-    created_at TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    draft_status TEXT DEFAULT 'drafted',
+    review_status TEXT DEFAULT 'pending',
+    revision_count INTEGER DEFAULT 0,
+    plagiarism_score NUMERIC,
+    review_notes TEXT
 );
 ```
 ```bash
@@ -104,9 +109,16 @@ TRUNCATE TABLE research_sources;
 
 pip install pyyaml
 
+Planner Read
+  ↓
 book.yml
   ↓
-Research Task Generator
+Planner creates batches
+  ↓
+Planner has unprocessed batches
+  ├── yes → Researcher for next batch
+  └── no → Plagiarism / Quality Checker
+Research for next batch
   ↓
 Batch 5 topics at a time
   ↓
@@ -127,4 +139,13 @@ Writer Uses source_id to fetch full source from PostgreSQL if needed
 Writes original explanation
     ↓
 Stores draft
+    ↓
+Planner 
+    └── yes → Loop back Planner has unprocessed batches
+  ↓ no tasks Batch left
+Plagiarism / Quality Checker
+  ↓
+Approved?
+  ├── yes → Finalize Book
+  └── no → Send failed drafts back to Writer
 ```

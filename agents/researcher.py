@@ -266,7 +266,6 @@ def researcher(state: BookState):
         )
 
         all_documents.extend(documents)
-        completed_task_ids.append(task["task_id"])
 
     print("Saving research chunks to Qdrant...")
     stored_ids = save_documents_to_qdrant(all_documents)
@@ -279,6 +278,5 @@ def researcher(state: BookState):
         "vector_collection": COLLECTION_NAME,
         "search_queries": all_search_queries,
         "research_chunk_ids": stored_ids,
-        "research_item_count": len(all_documents),
-        "completed_research_task_ids": completed_task_ids,
+        "research_item_count": len(all_documents)
     }
