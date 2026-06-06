@@ -12,7 +12,7 @@ from state.book_state import BookState
 COLLECTION_NAME = "book_research"
 POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
 
-llm = ChatOllama(model="qwen3:8b", temperature=0.4)
+llm = ChatOllama(model="qwen3:8b", temperature=0.6)
 embeddings = OllamaEmbeddings(model="nomic-embed-text")
 qdrant = QdrantClient(url="http://localhost:6333")
 
@@ -220,7 +220,7 @@ def writer(state: BookState):
 
         draft_ids.append(draft_id)
         completed_task_ids.append(task_id)
-        
+
     print("Writer done")
     
     return {

@@ -1,14 +1,14 @@
 from difflib import SequenceMatcher
-
+import uuid
+from datetime import datetime, timezone
 import psycopg
 from langchain_ollama import ChatOllama
-
 from state.book_state import BookState
 
 
 POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
 
-llm = ChatOllama(model="qwen3:8b", temperature=0.2)
+llm = ChatOllama(model="deepseek-r1:latest", temperature=0.2)
 
 
 def similarity_score(a: str, b: str) -> float:
@@ -123,6 +123,59 @@ def update_draft_review(
             )
 
 
+def save_draft_review(
+    draft_id: str,
+    book_id: str,
+    research_run_id: str,
+    task_id: str,
+    review_type: str,
+    review_status: str,
+    plagiarism_score: float,
+    quality_score: float | None,
+    completeness_score: float | None,
+    review_notes: str,
+):
+    review_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc)
+
+    with psycopg.connect(POSTGRES_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO draft_reviews (
+                    id,
+                    draft_id,
+                    book_id,
+                    research_run_id,
+                    task_id,
+                    review_type,
+                    review_status,
+                    plagiarism_score,
+                    quality_score,
+                    completeness_score,
+                    review_notes,
+                    created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    review_id,
+                    draft_id,
+                    book_id,
+                    research_run_id,
+                    task_id,
+                    review_type,
+                    review_status,
+                    plagiarism_score,
+                    quality_score,
+                    completeness_score,
+                    review_notes,
+                    created_at,
+                ),
+            )
+
+    return review_id
+
 def plagiarism_checker(state: BookState):
     print("Plagiarism / Quality Checker started")
 
@@ -182,11 +235,23 @@ def plagiarism_checker(state: BookState):
             approved_count += 1
 
         review_notes = f"""
-Similarity score: {max_similarity}
+        Similarity score: {max_similarity}
+        Quality review:
+        {review}
+        """.strip()
 
-Quality review:
-{review}
-""".strip()
+        save_draft_review(
+            draft_id=draft_id,
+            book_id=book_id,
+            research_run_id=research_run_id,
+            task_id=task_id,
+            review_type="plagiarism_quality_review",
+            review_status=review_status,
+            plagiarism_score=max_similarity,
+            quality_score=None,
+            completeness_score=None,
+            review_notes=review_notes,
+        )
 
         update_draft_review(
             draft_id=draft_id,
