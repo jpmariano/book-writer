@@ -1,0 +1,205 @@
+from difflib import SequenceMatcher
+
+import psycopg
+from langchain_ollama import ChatOllama
+
+from state.book_state import BookState
+
+
+POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
+
+llm = ChatOllama(model="qwen3:8b", temperature=0.2)
+
+
+def similarity_score(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+
+    a = a[:5000]
+    b = b[:5000]
+
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def get_drafts(book_id: str, research_run_id: str):
+    with psycopg.connect(POSTGRES_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    task_id,
+                    chapter_title,
+                    topic_title,
+                    general_explanation,
+                    technical_explanation,
+                    used_source_ids
+                FROM drafts
+                WHERE book_id = %s
+                AND research_run_id = %s
+                AND review_status = 'pending'
+                """,
+                (book_id, research_run_id),
+            )
+
+            return cur.fetchall()
+
+
+def get_sources(source_ids: list[str]):
+    if not source_ids:
+        return []
+
+    with psycopg.connect(POSTGRES_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, source_title, source_url, full_text
+                FROM research_sources
+                WHERE id = ANY(%s)
+                """,
+                (source_ids,),
+            )
+
+            return cur.fetchall()
+
+
+def quality_review(chapter_title: str, topic_title: str, draft_text: str) -> str:
+    prompt = f"""
+You are a strict quality reviewer for a technical book.
+
+Chapter:
+{chapter_title}
+
+Topic:
+{topic_title}
+
+Draft:
+{draft_text}
+
+Evaluate the draft for:
+- completeness
+- clarity
+- originality
+- technical accuracy
+- usefulness for software engineers and AI engineers
+
+Return one of these exact labels first:
+APPROVED
+NEEDS_REVISION
+
+Then provide short review notes.
+"""
+
+    response = llm.invoke(prompt)
+    return response.content.strip()
+
+
+def update_draft_review(
+    draft_id: str,
+    draft_status: str,
+    review_status: str,
+    plagiarism_score: float,
+    review_notes: str,
+):
+    with psycopg.connect(POSTGRES_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE drafts
+                SET
+                    draft_status = %s,
+                    review_status = %s,
+                    plagiarism_score = %s,
+                    review_notes = %s
+                WHERE id = %s
+                """,
+                (
+                    draft_status,
+                    review_status,
+                    plagiarism_score,
+                    review_notes,
+                    draft_id,
+                ),
+            )
+
+
+def plagiarism_checker(state: BookState):
+    print("Plagiarism / Quality Checker started")
+
+    book_id = state["book_id"]
+    research_run_id = state["research_run_id"]
+
+    drafts = get_drafts(book_id, research_run_id)
+
+    approved_count = 0
+    revision_count = 0
+    checked_count = 0
+
+    for draft in drafts:
+        (
+            draft_id,
+            task_id,
+            chapter_title,
+            topic_title,
+            general_explanation,
+            technical_explanation,
+            used_source_ids,
+        ) = draft
+
+        checked_count += 1
+
+        draft_text = f"""
+{general_explanation}
+
+{technical_explanation}
+""".strip()
+
+        sources = get_sources(used_source_ids or [])
+
+        max_similarity = 0.0
+
+        for source in sources:
+            source_id, source_title, source_url, full_text = source
+            score = similarity_score(draft_text, full_text)
+            max_similarity = max(max_similarity, score)
+
+        review = quality_review(
+            chapter_title=chapter_title,
+            topic_title=topic_title,
+            draft_text=draft_text,
+        )
+
+        plagiarism_failed = max_similarity > 0.35
+        quality_failed = review.upper().startswith("NEEDS_REVISION")
+
+        if plagiarism_failed or quality_failed:
+            status = "needs_revision"
+            review_status = "failed"
+            revision_count += 1
+        else:
+            status = "approved"
+            review_status = "passed"
+            approved_count += 1
+
+        review_notes = f"""
+Similarity score: {max_similarity}
+
+Quality review:
+{review}
+""".strip()
+
+        update_draft_review(
+            draft_id=draft_id,
+            draft_status=status,
+            review_status=review_status,
+            plagiarism_score=max_similarity,
+            review_notes=review_notes,
+        )
+
+    print("Checker done")
+
+    return {
+        "checked_draft_count": checked_count,
+        "approved_draft_count": approved_count,
+        "revision_draft_count": revision_count,
+    }

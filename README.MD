@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS drafts (
     plagiarism_score NUMERIC,
     review_notes TEXT
 );
+
+CREATE TABLE draft_reviews (
+    id UUID PRIMARY KEY,
+    draft_id UUID NOT NULL,
+    review_type TEXT NOT NULL,
+    score NUMERIC,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL
+);
 ```
 ```bash
 \dt #Lists all tables in the current (public) schema.
