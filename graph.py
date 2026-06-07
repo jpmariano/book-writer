@@ -5,6 +5,7 @@ from agents.planner import planner
 from agents.researcher import researcher
 from agents.writer import writer
 from agents.plagiarism_checker import plagiarism_checker
+from agents.second_writer import second_writer
 
 
 def route_after_planner(state: BookState):
@@ -14,12 +15,27 @@ def route_after_planner(state: BookState):
     return "plagiarism_checker"
 
 
+def route_after_checker(state: BookState):
+    if state.get("revision_draft_count", 0) > 0 and not state.get("stop_revisions", False):
+        return "second_writer"
+
+    return END
+
+
+def route_after_second_writer(state: BookState):
+    if state.get("revised_draft_count", 0) > 0 and not state.get("stop_revisions", False):
+        return "plagiarism_checker"
+
+    return END
+
+
 graph = StateGraph(BookState)
 
 graph.add_node("planner", planner)
 graph.add_node("researcher", researcher)
 graph.add_node("writer", writer)
 graph.add_node("plagiarism_checker", plagiarism_checker)
+graph.add_node("second_writer", second_writer)
 
 graph.add_edge(START, "planner")
 
@@ -34,6 +50,23 @@ graph.add_conditional_edges(
 
 graph.add_edge("researcher", "writer")
 graph.add_edge("writer", "planner")
-graph.add_edge("plagiarism_checker", END)
+
+graph.add_conditional_edges(
+    "plagiarism_checker",
+    route_after_checker,
+    {
+        "second_writer": "second_writer",
+        END: END,
+    },
+)
+
+graph.add_conditional_edges(
+    "second_writer",
+    route_after_second_writer,
+    {
+        "plagiarism_checker": "plagiarism_checker",
+        END: END,
+    },
+)
 
 app = graph.compile()

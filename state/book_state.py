@@ -25,3 +25,9 @@ class BookState(TypedDict, total=False):
     checked_draft_count: int
     approved_draft_count: int
     revision_draft_count: int
+
+    revised_draft_count: int
+    revised_draft_ids: List[str]
+    revision_round: int
+    max_revision_rounds: int
+    stop_revisions: bool
