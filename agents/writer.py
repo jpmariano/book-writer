@@ -5,9 +5,10 @@ import psycopg
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from langchain_ollama import ChatOllama, OllamaEmbeddings
-
+from psycopg.types.json import Jsonb
 from state.book_state import BookState
-
+import json
+import re
 
 COLLECTION_NAME = "book_research"
 POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
@@ -94,6 +95,34 @@ Rules:
 - Make it useful for software engineers and AI engineers.
 - Do not invent facts not supported by the research.
 
+CODE SAMPLE GENERATION:
+Determine whether the topic would benefit from code examples.
+
+Generate code examples when:
+- Explaining APIs
+- Frameworks
+- Libraries
+- Algorithms
+- Design patterns
+- Configuration
+- Infrastructure
+- AI/ML workflows
+- Database operations
+- Debugging techniques
+
+Do NOT generate code when:
+- The topic is purely conceptual
+- The topic is historical
+- The topic is organizational or management focused
+
+Requirements:
+- Examples must be realistic and runnable.
+- Use the most appropriate language.
+- Prefer Python for AI and backend topics.
+- Prefer JavaScript/TypeScript for frontend topics.
+- Keep examples concise.
+- Include brief comments where useful.  
+
 Return exactly this format:
 
 GENERAL_EXPLANATION:
@@ -101,6 +130,95 @@ Write a clear beginner-friendly explanation.
 
 TECHNICAL_EXPLANATION:
 Write a deeper technical explanation for engineers.
+
+CODE_SAMPLES:
+[
+  {{
+    "title": "...",
+    "language": "...",
+    "purpose": "...",
+    "code": "..."
+  }}
+]
+
+If no code is needed:
+
+CODE_SAMPLES:
+[]
+"""
+
+    response = llm.invoke(prompt)
+    content = response.content
+
+    code_samples = extract_code_samples(content)
+
+    if "TECHNICAL_EXPLANATION:" in content:
+        before, technical = content.split("TECHNICAL_EXPLANATION:", 1)
+        general = before.replace("GENERAL_EXPLANATION:", "").strip()
+
+        if "CODE_SAMPLES:" in technical:
+            technical = technical.split("CODE_SAMPLES:", 1)[0].strip()
+        else:
+            technical = technical.strip()
+    else:
+        general = content.strip()
+
+    return {
+        "general_explanation": general,
+        "technical_explanation": technical,
+        "code_samples": code_samples,
+    }
+
+def style_revision(topic_title: str, chapter_title: str, explanations: dict) -> dict:
+    prompt = f"""
+Role: You are a Senior Editor and Human Copywriter. 
+Your objective is to rewrite AI-generated text to make it sound authentic, engaging, and written by a real human being. 
+Your goal is to make the writing clearer, more natural, more specific, and more useful to readers.
+
+Chapter:
+{chapter_title}
+
+Topic:
+{topic_title}
+
+Current draft:
+
+GENERAL_EXPLANATION:
+{explanations["general_explanation"]}
+
+TECHNICAL_EXPLANATION:
+{explanations["technical_explanation"]}
+
+
+STYLE GUIDELINES:
+- **NO PATHOS:** Avoid grandiose words (e.g., "paramount," "unparalleled," "groundbreaking"). Keep it grounded.
+- **NO CLICHÉS:** Strictly forbid these phrases: "unlock potential," "next level," "game-changer," "seamless," "fast-paced world," "delve," "landscape," "testament to," "leverage."
+- **VARY RHYTHM:** Use "burstiness." Mix very short sentences with longer, complex ones. Avoid monotone structure.
+- **BE SUBJECTIVE:** Use "I," "We," "In my experience." Avoid passive voice.
+- **NO TAUTOLOGY:** Do not repeat the same nouns or verbs in adjacent sentences.
+
+FEW-SHOT EXAMPLES (Learn from this): 
+❌ **AI Style:** "In today's digital landscape, it is paramount to leverage innovative solutions to unlock your potential."
+✅ **Human Style:** "Look, the digital world moves fast. If you want to grow, you need tools that actually work, not just buzzwords."
+
+❌ **AI Style:** "This comprehensive guide delves into the key aspects of optimization."
+✅ **Human Style:** "In this guide, we'll break down exactly how to optimize your workflow without the fluff.
+
+WORKFLOW: Silently analyze, plan, rewrite, and review. Do not show your analysis or plan. Only return the final rewritten content.
+
+Return exactly this format:
+
+Chapter:
+{chapter_title}
+
+Topic:
+{topic_title}
+
+GENERAL_EXPLANATION:
+...
+
+TECHNICAL_EXPLANATION:
+...
 """
 
     response = llm.invoke(prompt)
@@ -117,10 +235,28 @@ Write a deeper technical explanation for engineers.
         general = content.strip()
 
     return {
+        "chapter": chapter_title,
+        "topic": topic_title,
         "general_explanation": general,
         "technical_explanation": technical,
+        "code_samples": explanations.get("code_samples", []),
     }
 
+def extract_code_samples(content: str) -> list[dict]:
+    if "CODE_SAMPLES:" not in content:
+        return []
+
+    raw = content.split("CODE_SAMPLES:", 1)[1].strip()
+
+    match = re.search(r"\[\s*{.*?}\s*\]|\[\s*\]", raw, re.DOTALL)
+    if not match:
+        return []
+
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
 
 def save_draft_to_postgres(
     book_id: str,
@@ -131,6 +267,7 @@ def save_draft_to_postgres(
     general_explanation: str,
     technical_explanation: str,
     used_source_ids: list[str],
+    code_samples: list[dict],
 ) -> str:
     draft_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
@@ -148,10 +285,11 @@ def save_draft_to_postgres(
                     topic_title,
                     general_explanation,
                     technical_explanation,
+                    code_samples,
                     used_source_ids,
                     created_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     draft_id,
@@ -162,6 +300,7 @@ def save_draft_to_postgres(
                     topic_title,
                     general_explanation,
                     technical_explanation,
+                    Jsonb(code_samples),
                     used_source_ids,
                     created_at,
                 ),
@@ -195,10 +334,16 @@ def writer(state: BookState):
             limit=10,
         )
 
-        explanations = write_explanations(
+        raw_explanations = write_explanations(
             topic_title=topic_title,
             chapter_title=chapter_title,
             chunks=chunks,
+        )
+
+        explanations = style_revision(
+            topic_title=topic_title,
+            chapter_title=chapter_title,
+            explanations=raw_explanations,
         )
 
         used_source_ids = list({
@@ -215,6 +360,7 @@ def writer(state: BookState):
             topic_title=topic_title,
             general_explanation=explanations["general_explanation"],
             technical_explanation=explanations["technical_explanation"],
+            code_samples=explanations.get("code_samples", []),
             used_source_ids=used_source_ids,
         )
 
@@ -228,3 +374,5 @@ def writer(state: BookState):
         "draft_count": len(draft_ids),
         "completed_research_task_ids": completed_task_ids,
     }
+
+
