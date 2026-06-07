@@ -215,9 +215,9 @@ def second_writer(state: BookState):
     book_id = state["book_id"]
     research_run_id = state["research_run_id"]
 
-    max_revision_rounds = state.get("max_revision_rounds", 2)
+    max_revision_rounds = state.get("max_revision_rounds", 3)
     revision_round = state.get("revision_round", 0)
-
+    print("revision_round" + revision_round)
     if revision_round >= max_revision_rounds:
         print("Maximum revision rounds reached; stopping revisions.")
         return {
