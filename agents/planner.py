@@ -20,7 +20,9 @@ def load_book_guide(path: Path = BOOK_GUIDE_PATH) -> dict[str, Any]:
 def flatten_book_topics(book_guide: dict[str, Any]) -> list[dict[str, Any]]:
     book = book_guide["book"]
 
-    book_title = book["title"]
+    book_title = book.get("book_title") or book.get("title")
+    if not book_title:
+        raise ValueError("book.yml must contain book.book_title or book.title")
     audience = book.get("audience", [])
 
     tasks = []
@@ -85,7 +87,7 @@ def planner(state: BookState):
     print(f"Next batch size: {len(research_batch)}")
 
     return {
-        "book_title": book_guide["book"]["title"],
+        "book_title": book_guide["book"].get("book_title") or book_guide["book"].get("title"),
         "audience": book_guide["book"].get("audience", []),
         "all_research_tasks": all_research_tasks,
         "current_research_batch": research_batch,

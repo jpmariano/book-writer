@@ -23,6 +23,8 @@ def route_after_checker(state: BookState):
 
 
 def route_after_second_writer(state: BookState):
+    print("route_after_second_writer revised_draft_count:", state.get("revised_draft_count"))
+    print("route_after_second_writer stop_revisions:", state.get("stop_revisions"))
     if state.get("revised_draft_count", 0) > 0 and not state.get("stop_revisions", False):
         return "plagiarism_checker"
 

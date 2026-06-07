@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import psycopg
 from langchain_ollama import ChatOllama
 from state.book_state import BookState
+from agents.prompt_utils import build_quality_review_prompt
 
 
 POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
@@ -63,36 +64,27 @@ def get_sources(source_ids: list[str]):
             return cur.fetchall()
 
 
-def quality_review(chapter_title: str, topic_title: str, draft_text: str) -> str:
-    prompt = f"""
-You are a strict quality reviewer for a technical book.
-
-Chapter:
-{chapter_title}
-
-Topic:
-{topic_title}
-
-Draft:
-{draft_text}
-
-Evaluate the draft for:
-- completeness
-- clarity
-- originality
-- technical accuracy
-- usefulness for software engineers and AI engineers
-
-Return one of these exact labels first:
-APPROVED
-NEEDS_REVISION
-
-Then provide short review notes.
-"""
+def quality_review(
+    book_title: str,
+    book_subject: str | None,
+    genre: str | None,
+    audience,
+    chapter_title: str,
+    topic_title: str,
+    draft_text: str,
+) -> str:
+    prompt = build_quality_review_prompt(
+        book_title=book_title,
+        book_subject=book_subject,
+        genre=genre,
+        audience=audience,
+        chapter_title=chapter_title,
+        topic_title=topic_title,
+        draft_text=draft_text,
+    )
 
     response = llm.invoke(prompt)
     return response.content.strip()
-
 
 def update_draft_review(
     draft_id: str,
@@ -182,6 +174,11 @@ def plagiarism_checker(state: BookState):
     book_id = state["book_id"]
     research_run_id = state["research_run_id"]
 
+    book_title = state.get("book_title", "Untitled Book")
+    book_subject = state.get("book_subject")
+    genre = state.get("genre")
+    audience = state.get("audience", [])
+
     drafts = get_drafts(book_id, research_run_id)
 
     approved_count = 0
@@ -217,6 +214,10 @@ def plagiarism_checker(state: BookState):
             max_similarity = max(max_similarity, score)
 
         review = quality_review(
+            book_title=book_title,
+            book_subject=book_subject,
+            genre=genre,
+            audience=audience,
             chapter_title=chapter_title,
             topic_title=topic_title,
             draft_text=draft_text,

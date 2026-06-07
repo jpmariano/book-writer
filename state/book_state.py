@@ -8,6 +8,10 @@ class BookState(TypedDict, total=False):
 
     book_title: str
     audience: List[str]
+    book_subject: str
+    genre: str
+    tone: str
+    reading_level: str
 
     all_research_tasks: List[Dict[str, Any]]
     current_research_batch: List[Dict[str, Any]]
@@ -27,7 +31,6 @@ class BookState(TypedDict, total=False):
     revision_draft_count: int
 
     revised_draft_count: int
-    revised_draft_ids: List[str]
+    stop_revisions: bool
     revision_round: int
     max_revision_rounds: int
-    stop_revisions: bool

@@ -8,9 +8,8 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from agents.websearch import web_search
 from state.book_state import BookState
+from agents.prompt_utils import build_collection_name, build_research_prompt
 
-
-COLLECTION_NAME = "book_research"
 
 POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
 
@@ -28,19 +27,20 @@ qdrant = QdrantClient(
 )
 
 
-def generate_search_queries(topic: str) -> list[str]:
-    prompt = f"""
-You are the researcher agent for a book-writing system.
-
-Book topic:
-{topic}
-
-Generate 6 useful web search queries for researching this book.
-
-Return only the search queries.
-One query per line.
-No numbering.
-"""
+def generate_search_queries(
+    topic: str,
+    book_title: str,
+    book_subject: str | None,
+    genre: str | None,
+    audience,
+) -> list[str]:
+    prompt = build_research_prompt(
+        book_title=book_title,
+        book_subject=book_subject,
+        genre=genre,
+        audience=audience,
+        topic=topic,
+    )
 
     response = llm.invoke(prompt)
 
@@ -69,12 +69,12 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 120) -> list[str
     return chunks
 
 
-def ensure_collection(vector_size: int):
+def ensure_collection(collection_name: str, vector_size: int):
     existing = [c.name for c in qdrant.get_collections().collections]
 
-    if COLLECTION_NAME not in existing:
+    if collection_name not in existing:
         qdrant.create_collection(
-            collection_name=COLLECTION_NAME,
+            collection_name=collection_name,
             vectors_config=VectorParams(
                 size=vector_size,
                 distance=Distance.COSINE,
@@ -139,6 +139,7 @@ def build_research_documents(
     topic: str,
     book_id: str,
     research_run_id: str,
+    collection_name: str,
     search_queries: list[str],
 ) -> list[dict]:
     documents = []
@@ -189,6 +190,7 @@ Search Query: {query}
                         "source_id": source_id,
                         "book_id": book_id,
                         "research_run_id": research_run_id,
+                        "collection_name": collection_name,
                         "topic": topic,
                         "query": query,
                         "source_title": title,
@@ -203,12 +205,12 @@ Search Query: {query}
     return documents
 
 
-def save_documents_to_qdrant(documents: list[dict]) -> list[str]:
+def save_documents_to_qdrant(collection_name: str, documents: list[dict]) -> list[str]:
     if not documents:
         return []
 
     first_vector = embeddings.embed_query(documents[0]["text"])
-    ensure_collection(vector_size=len(first_vector))
+    ensure_collection(collection_name=collection_name, vector_size=len(first_vector))
 
     points = []
     stored_ids = []
@@ -231,7 +233,7 @@ def save_documents_to_qdrant(documents: list[dict]) -> list[str]:
         stored_ids.append(point_id)
 
     qdrant.upsert(
-        collection_name=COLLECTION_NAME,
+        collection_name=collection_name,
         points=points,
     )
 
@@ -246,6 +248,16 @@ def researcher(state: BookState):
     book_id = state.get("book_id", str(uuid.uuid4()))
     research_run_id = state.get("research_run_id", str(uuid.uuid4()))
 
+    book_title = state.get("book_title", "Untitled Book")
+    book_subject = state.get("book_subject")
+    genre = state.get("genre")
+    audience = state.get("audience", [])
+
+    collection_name = state.get("vector_collection") or build_collection_name(
+        book_title=book_title,
+        book_id=book_id,
+    )
+
     all_search_queries = []
     all_documents = []
     completed_task_ids = state.get("completed_research_task_ids", [])
@@ -255,27 +267,34 @@ def researcher(state: BookState):
 
         print(f"Researching topic: {topic}")
 
-        search_queries = generate_search_queries(topic)
+        search_queries = generate_search_queries(
+            topic=topic,
+            book_title=book_title,
+            book_subject=book_subject,
+            genre=genre,
+            audience=audience,
+        )
         all_search_queries.extend(search_queries)
 
         documents = build_research_documents(
             topic=topic,
             book_id=book_id,
             research_run_id=research_run_id,
+            collection_name=collection_name,
             search_queries=search_queries,
         )
 
         all_documents.extend(documents)
 
     print("Saving research chunks to Qdrant...")
-    stored_ids = save_documents_to_qdrant(all_documents)
+    stored_ids = save_documents_to_qdrant(collection_name, all_documents)
 
     print("Researcher done")
 
     return {
         "book_id": book_id,
         "research_run_id": research_run_id,
-        "vector_collection": COLLECTION_NAME,
+        "vector_collection": collection_name,
         "search_queries": all_search_queries,
         "research_chunk_ids": stored_ids,
         "research_item_count": len(all_documents)

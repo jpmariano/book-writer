@@ -4,10 +4,13 @@ result = app.invoke(
     {
         "research_batch_size": 5,
         "completed_research_task_ids": [],
+        "max_revision_rounds": 3,
+        "revision_round": 0,
+        "stop_revisions": False,
     },
     {
         "recursion_limit": 200
-    }
+    },
 )
 
 print("Done")
