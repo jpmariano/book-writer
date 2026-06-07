@@ -326,7 +326,7 @@ If no image is needed:
 If an image is needed:
 {{
   "needed": true,
-  "type": "diagram | flowchart | architecture | sequence | concept_map",
+  "type": "diagram | flowchart | architecture | sequence | concept_map | timeline | comparison_table | process_diagram | mind_map | uml | erd | network_diagram | organizational_chart | venn_diagrams | bar_charts | line_graphs | pie_charts | donut_chart | dfd | infographic | drawing",
   "title": "short image title",
   "caption": "reader-facing caption",
   "alt_text": "accessible alt text",
