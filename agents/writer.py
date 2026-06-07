@@ -162,6 +162,7 @@ CODE_SAMPLES:
             technical = technical.strip()
     else:
         general = content.strip()
+        technical = ""
 
     return {
         "general_explanation": general,
@@ -258,6 +259,111 @@ def extract_code_samples(content: str) -> list[dict]:
     except json.JSONDecodeError:
         return []
 
+
+def build_image_context(explanations: dict) -> str:
+    return f"""
+GENERAL_EXPLANATION:
+{explanations.get("general_explanation", "")}
+
+TECHNICAL_EXPLANATION:
+{explanations.get("technical_explanation", "")}
+
+CODE_SAMPLES:
+{json.dumps(explanations.get("code_samples", []), ensure_ascii=False)}
+""".strip()
+
+
+def decide_image_need(topic_title: str, chapter_title: str, explanations: dict) -> dict | None:
+    """
+    Decide whether this draft needs one explanatory image.
+
+    Returns a JSON-serializable image spec when an image would help.
+    Returns None when text/code is enough.
+    """
+    content_context = build_image_context(explanations)
+
+    prompt = f"""
+You are an instructional design reviewer for a technical book.
+
+Decide whether this topic needs ONE explanatory image after the written content.
+
+Chapter:
+{chapter_title}
+
+Topic:
+{topic_title}
+
+Draft content:
+{content_context}
+
+Only recommend an image when the concept is hard to grasp from text alone.
+
+Recommend an image for:
+- Complex architecture
+- Multi-step workflows
+- Data flow
+- System interactions
+- Abstract AI/ML concepts
+- Algorithms that are easier to understand visually
+- Comparisons with multiple moving parts
+- Concepts where a reader benefits from seeing relationships
+
+Do NOT recommend an image for:
+- Simple definitions
+- Mostly historical/background topics
+- Topics already made clear by code samples
+- Short practical tips
+- Content that would only produce a decorative stock image
+
+Return only valid JSON.
+
+If no image is needed:
+{{
+  "needed": false,
+  "reason": "brief reason"
+}}
+
+If an image is needed:
+{{
+  "needed": true,
+  "type": "diagram | flowchart | architecture | sequence | concept_map",
+  "title": "short image title",
+  "caption": "reader-facing caption",
+  "alt_text": "accessible alt text",
+  "placement": "after_content",
+  "prompt": "detailed prompt for generating or drawing the image",
+  "reason": "brief reason"
+}}
+"""
+
+    response = llm.invoke(prompt)
+    raw = response.content.strip()
+
+    try:
+        decision = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if not match:
+            return None
+        try:
+            decision = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return None
+
+    if not decision.get("needed"):
+        return None
+
+    return {
+        "type": decision.get("type", "diagram"),
+        "title": decision.get("title", f"{topic_title} diagram"),
+        "caption": decision.get("caption", ""),
+        "alt_text": decision.get("alt_text", ""),
+        "placement": decision.get("placement", "after_content"),
+        "prompt": decision.get("prompt", ""),
+        "reason": decision.get("reason", ""),
+    }
+
+
 def save_draft_to_postgres(
     book_id: str,
     research_run_id: str,
@@ -268,6 +374,7 @@ def save_draft_to_postgres(
     technical_explanation: str,
     used_source_ids: list[str],
     code_samples: list[dict],
+    image: dict | None = None,
 ) -> str:
     draft_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
@@ -286,10 +393,11 @@ def save_draft_to_postgres(
                     general_explanation,
                     technical_explanation,
                     code_samples,
+                    image,
                     used_source_ids,
                     created_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     draft_id,
@@ -301,6 +409,7 @@ def save_draft_to_postgres(
                     general_explanation,
                     technical_explanation,
                     Jsonb(code_samples),
+                    Jsonb(image) if image is not None else None,
                     used_source_ids,
                     created_at,
                 ),
@@ -352,6 +461,12 @@ def writer(state: BookState):
             if chunk.get("source_id")
         })
 
+        image = decide_image_need(
+            topic_title=topic_title,
+            chapter_title=chapter_title,
+            explanations=explanations,
+        )
+
         draft_id = save_draft_to_postgres(
             book_id=book_id,
             research_run_id=research_run_id,
@@ -361,6 +476,7 @@ def writer(state: BookState):
             general_explanation=explanations["general_explanation"],
             technical_explanation=explanations["technical_explanation"],
             code_samples=explanations.get("code_samples", []),
+            image=image,
             used_source_ids=used_source_ids,
         )
 
