@@ -152,7 +152,7 @@ def style_revision(
         "topic": topic_title,
         "general_explanation": general,
         "technical_explanation": technical,
-        "code_samples": explanations.get("code_samples", []),
+        "code_samples": [],
     }
 
 def extract_code_samples(content: str) -> list[dict]:
@@ -355,16 +355,6 @@ def writer(state: BookState):
             if chunk.get("source_id")
         })
 
-        image = decide_image_need(
-            topic_title=topic_title,
-            chapter_title=chapter_title,
-            explanations=explanations,
-            book_title=book_title,
-            book_subject=book_subject,
-            genre=genre,
-            audience=audience,
-        )
-
         draft_id = save_draft_to_postgres(
             book_id=book_id,
             research_run_id=research_run_id,
@@ -373,8 +363,8 @@ def writer(state: BookState):
             topic_title=topic_title,
             general_explanation=explanations["general_explanation"],
             technical_explanation=explanations["technical_explanation"],
-            code_samples=explanations.get("code_samples", []),
-            image=image,
+            code_samples=[],
+            image=None,
             used_source_ids=used_source_ids,
         )
 

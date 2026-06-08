@@ -34,3 +34,7 @@ class BookState(TypedDict, total=False):
     stop_revisions: bool
     revision_round: int
     max_revision_rounds: int
+
+    total_draft_count: int
+    approved_book_draft_count: int
+

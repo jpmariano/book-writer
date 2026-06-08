@@ -203,7 +203,7 @@ Fiction / story rules:
     Technical book rules:
     - Explain concepts for software engineers and AI engineers.
     - Include implementation details when relevant.
-    - Discuss architecture, tradeoffs, workflows, and production considerations.
+    - Discuss architecture, componens, tradeoffs, workflows, and process.
     - Generate code samples when code helps understanding.
     - Prefer concise, realistic Python examples for AI, backend, APIs, agents, and automation.
     - Do not force code for purely conceptual topics.

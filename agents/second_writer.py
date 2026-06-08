@@ -12,7 +12,7 @@ from state.book_state import BookState
 POSTGRES_URL = "postgresql://book_writer:book_writer_dev_password@localhost:5432/book_writer"
 
 # A little lower temperature than the first writer: this is an editor/reviser.
-llm = ChatOllama(model="qwen3:8b", temperature=0.35)
+llm = ChatOllama(model="qwen3:8b", temperature=0.6)
 
 
 def extract_code_samples(content: str) -> list[dict]:

@@ -6,6 +6,7 @@ from agents.researcher import researcher
 from agents.writer import writer
 from agents.plagiarism_checker import plagiarism_checker
 from agents.second_writer import second_writer
+from agents.asset_generator import asset_generator
 
 
 def route_after_planner(state: BookState):
@@ -16,8 +17,21 @@ def route_after_planner(state: BookState):
 
 
 def route_after_checker(state: BookState):
-    if state.get("revision_draft_count", 0) > 0 and not state.get("stop_revisions", False):
+    print("route_after_checker revision_draft_count:", state.get("revision_draft_count"))
+    print("route_after_checker approved_book_draft_count:", state.get("approved_book_draft_count"))
+    print("route_after_checker total_draft_count:", state.get("total_draft_count"))
+
+    if (
+        state.get("revision_draft_count", 0) > 0
+        and not state.get("stop_revisions", False)
+    ):
         return "second_writer"
+
+    total = state.get("total_draft_count", 0)
+    approved = state.get("approved_book_draft_count", 0)
+
+    if total > 0 and approved == total:
+        return "asset_generator"
 
     return END
 
@@ -38,6 +52,7 @@ graph.add_node("researcher", researcher)
 graph.add_node("writer", writer)
 graph.add_node("plagiarism_checker", plagiarism_checker)
 graph.add_node("second_writer", second_writer)
+graph.add_node("asset_generator", asset_generator)
 
 graph.add_edge(START, "planner")
 
@@ -58,9 +73,12 @@ graph.add_conditional_edges(
     route_after_checker,
     {
         "second_writer": "second_writer",
+        "asset_generator": "asset_generator",
         END: END,
     },
 )
+
+graph.add_edge("asset_generator", END)
 
 graph.add_conditional_edges(
     "second_writer",

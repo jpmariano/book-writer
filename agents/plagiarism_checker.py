@@ -263,9 +263,34 @@ def plagiarism_checker(state: BookState):
         )
 
     print("Checker done")
-
+    total_drafts, approved_drafts = get_book_draft_stats(
+        book_id,
+        research_run_id,
+    )
     return {
         "checked_draft_count": checked_count,
         "approved_draft_count": approved_count,
         "revision_draft_count": revision_count,
+        "total_draft_count": total_drafts,
+        "approved_book_draft_count": approved_drafts,
     }
+
+def get_book_draft_stats(book_id: str, research_run_id: str):
+    with psycopg.connect(POSTGRES_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (
+                        WHERE draft_status = 'approved'
+                        AND review_status = 'passed'
+                    ) AS approved
+                FROM drafts
+                WHERE book_id = %s
+                  AND research_run_id = %s
+                """,
+                (book_id, research_run_id),
+            )
+
+            return cur.fetchone()
